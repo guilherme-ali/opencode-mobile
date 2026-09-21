@@ -16,31 +16,19 @@
 // the full display, the two spaces no longer agree, and the computed padding
 // comes up short by exactly the status-bar inset.
 //
-// Measured on an Android 12 emulator (Pixel 3 XL profile, scale 3.5), keyboard
-// open on the session screen:
+// In addition, vendor keyboards (notably Samsung Keyboard in One UI) render
+// an accessory toolbar (clipboard, emojis, settings) at the top of the
+// keyboard. Adding an extra offset (56dp) ensures the composer and send button
+// sit comfortably above this toolbar.
 //
-//     screen height        845.71 dp
-//     window height        748.86 dp
-//     insets.top            48.86 dp   insets.bottom 48 dp
-//     keyboard screenY     511.71 dp   height 286 dp
-//
-//     computed padding = 748.86 - 511.71 = 237.14 dp
-//     required padding =                   286.00 dp   (the real keyboard)
-//     shortfall        =                    48.86 dp   === insets.top
-//
-// 48.86 dp x 3.5 = 171 px, which is the composer row — hence "the input box is
-// invisible" (#156, and #53/#147 before it).
-//
-// Adding `insets.top` to keyboardVerticalOffset re-aligns the two spaces:
-// padding becomes 237.14 + 48.86 = 286, exactly the keyboard height.
-//
-// iOS keeps its existing empirical 90 — it does not have this mismatch, and
-// changing it is out of scope for this fix.
+// iOS keeps its existing empirical 90.
 
 export const IOS_KEYBOARD_VERTICAL_OFFSET = 90
+export const ANDROID_KEYBOARD_EXTRA_OFFSET = 56
 
 export function keyboardVerticalOffset(platform: string, insetTop: number): number {
   if (platform === "ios") return IOS_KEYBOARD_VERTICAL_OFFSET
   // Guard against a bogus/unmeasured inset so we never push content down.
-  return Math.max(0, insetTop)
+  // Add ANDROID_KEYBOARD_EXTRA_OFFSET to clear Samsung/vendor keyboard toolbars.
+  return Math.max(0, insetTop) + ANDROID_KEYBOARD_EXTRA_OFFSET
 }
