@@ -2,6 +2,7 @@ import { useState } from "react"
 import { View, Text, TouchableOpacity, StyleSheet, useColorScheme, Platform, ScrollView } from "react-native"
 import * as Clipboard from "expo-clipboard"
 import { WIDE_CONTENT_SCROLL_CONFIG } from "../../lib/scroll-config"
+import { KatexBlock } from "./KatexBlock"
 
 interface Props {
   code: string
@@ -11,6 +12,11 @@ interface Props {
 export function CodeBlock({ code, language }: Props) {
   const isDark = useColorScheme() === "dark"
   const [copied, setCopied] = useState(false)
+
+  const lang = (language || "").toLowerCase().trim()
+  if (lang === "math" || lang === "latex" || lang === "katex") {
+    return <KatexBlock math={code} isDark={isDark} />
+  }
 
   const copy = async () => {
     try {

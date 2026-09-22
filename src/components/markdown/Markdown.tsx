@@ -2,6 +2,7 @@ import { useMemo, type ReactNode } from "react"
 import { View, Text, useColorScheme, Platform, type StyleProp, type ViewStyle, type TextStyle } from "react-native"
 import { useMarkdown, Renderer } from "react-native-marked"
 import { CodeBlock } from "./CodeBlock"
+import { preprocessMarkdownMath, parseInlineMathSegments } from "../../lib/markdown-math"
 
 // react-native-marked's base Renderer hardcodes `selectable` on every plain
 // text node it produces (text/strong/em/del/heading/codespan). On Android,
@@ -15,6 +16,13 @@ import { CodeBlock } from "./CodeBlock"
 // this. Code content is still copyable via CodeBlock's explicit Copy
 // button, so dropping `selectable` on plain text costs little.
 class CustomRenderer extends Renderer {
+  private isDark: boolean
+
+  constructor(isDark: boolean = false) {
+    super()
+    this.isDark = isDark
+  }
+
   private plainText(children: string | ReactNode[], styles?: StyleProp<TextStyle>): ReactNode {
     return (
       <Text key={this.getKey()} style={styles}>
@@ -32,6 +40,36 @@ class CustomRenderer extends Renderer {
   }
 
   text(text: string | ReactNode[], styles?: TextStyle): ReactNode {
+    if (typeof text === "string" && text.includes("$")) {
+      const segments = parseInlineMathSegments(text)
+      if (segments.length > 1 || (segments.length === 1 && segments[0].type === "math")) {
+        const mathColor = this.isDark ? "#a78bfa" : "#7c3aed"
+        return (
+          <Text key={this.getKey()} style={styles}>
+            {segments.map((seg, i) => {
+              if (seg.type === "math") {
+                return (
+                  <Text
+                    key={i}
+                    style={[
+                      styles,
+                      {
+                        fontFamily: Platform.OS === "android" ? "KaTeX_Math-Italic" : "KaTeX_Math",
+                        color: mathColor,
+                        fontSize: (styles?.fontSize ?? 15) * 1.05,
+                      },
+                    ]}
+                  >
+                    {seg.content}
+                  </Text>
+                )
+              }
+              return seg.content
+            })}
+          </Text>
+        )
+      }
+    }
     return this.plainText(text, styles)
   }
 
@@ -132,16 +170,19 @@ export function Markdown({ children }: Props) {
   const isDark = useColorScheme() === "dark"
   const theme = isDark ? darkTheme : lightTheme
 
+  // Preprocess any $$ ... $$ math blocks into ```math ... ``` blocks
+  const preprocessed = useMemo(() => preprocessMarkdownMath(children ?? ""), [children])
+
   // A module-scope singleton renderer would share one CustomRenderer (and
   // its underlying github-slugger) across every Markdown instance and every
   // streamed token forever. github-slugger never resets, so its heading-slug
   // keys only ever climb — which fed into useMarkdown's memoized parser and
   // made the emitted React keys change on every token, remounting the whole
   // subtree (resetting code-block scroll position, flashing content). Scoping
-  // the renderer to `children` resets the slugger per parse, so keys are
+  // the renderer to `preprocessed` resets the slugger per parse, so keys are
   // deterministic (and stable) for a given value, while re-renders with an
   // unchanged value stay memoized instead of creating a new renderer.
-  const renderer = useMemo(() => new CustomRenderer(), [children])
+  const renderer = useMemo(() => new CustomRenderer(isDark), [preprocessed, isDark])
 
   // react-native-marked's default <RNMarkdown> export renders blocks inside a
   // FlatList. Chat messages are rendered inside app/session/[id].tsx's own
@@ -152,7 +193,7 @@ export function Markdown({ children }: Props) {
   // scrollEnabled: false and a large initialNumToRender here, which defeats
   // virtualization anyway, so there's nothing to lose by rendering the parsed
   // blocks directly with the useMarkdown hook instead (issue #104).
-  const elements = useMarkdown(children ?? "", {
+  const elements = useMarkdown(preprocessed, {
     renderer,
     styles: theme,
     colorScheme: isDark ? "dark" : "light",

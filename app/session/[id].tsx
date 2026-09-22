@@ -788,6 +788,7 @@ export default function SessionScreen() {
                 />
               )}
               contentContainerStyle={s.messageList}
+              nestedScrollEnabled={true}
               onScroll={handleScroll}
               scrollEventThrottle={16}
               onContentSizeChange={handleContentSizeChange}

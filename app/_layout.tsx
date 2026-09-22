@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet"
 import { I18nextProvider, useTranslation } from "react-i18next"
+import { useFonts } from "expo-font"
 import i18n from "../src/lib/i18n/config"
 import { useAuth } from "../src/stores/auth"
 import { useConnections } from "../src/stores/connections"
@@ -27,6 +28,13 @@ function RootLayout() {
   const colorScheme = useColorScheme()
   const isDark = colorScheme === "dark"
   const { t } = useTranslation()
+
+  useFonts({
+    "KaTeX_Math": require("../assets/fonts/KaTeX_Math-Italic.ttf"),
+    "KaTeX_Math-Italic": require("../assets/fonts/KaTeX_Math-Italic.ttf"),
+    "KaTeX_Main": require("../assets/fonts/KaTeX_Main-Regular.ttf"),
+    "KaTeX_Main-Regular": require("../assets/fonts/KaTeX_Main-Regular.ttf"),
+  })
 
   const { initialize: initAuth, isLoading: authLoading } = useAuth()
   const { loadConnections, isLoading: connectionsLoading, client } = useConnections()

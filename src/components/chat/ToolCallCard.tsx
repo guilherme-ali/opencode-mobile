@@ -41,17 +41,21 @@ function BashDetail({ input, output, isDark }: { input: unknown; output: unknown
     <View style={s.detailSection}>
       {typeof cmd === "string" && (
         <View style={[s.codeBlock, isDark && s.codeBlockDark]}>
-          <Text style={[s.codePre, isDark && s.codePteDark]} selectable>
-            <Text style={s.codePrompt}>$ </Text>
-            {cmd}
-          </Text>
+          <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false}>
+            <Text style={[s.codePre, isDark && s.codePteDark]} selectable>
+              <Text style={s.codePrompt}>$ </Text>
+              {cmd}
+            </Text>
+          </ScrollView>
         </View>
       )}
       {out !== undefined && out.length > 0 && (
         <View style={[s.codeBlock, isDark && s.codeBlockDark, { marginTop: 6 }]}>
-          <Text style={[s.codePre, isDark && s.codePteDark]} selectable numberOfLines={80}>
-            {out}
-          </Text>
+          <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false}>
+            <Text style={[s.codePre, isDark && s.codePteDark]} selectable>
+              {out}
+            </Text>
+          </ScrollView>
         </View>
       )}
     </View>
@@ -87,9 +91,11 @@ function WriteDetail({ input, isDark }: { input: unknown; isDark: boolean }) {
       )}
       {typeof content === "string" && content.length > 0 && (
         <View style={[s.codeBlock, isDark && s.codeBlockDark, { marginTop: 6 }]}>
-          <Text style={[s.codePre, isDark && s.codePteDark]} selectable numberOfLines={40}>
-            {content}
-          </Text>
+          <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false}>
+            <Text style={[s.codePre, isDark && s.codePteDark]} selectable>
+              {content}
+            </Text>
+          </ScrollView>
         </View>
       )}
     </View>
@@ -127,9 +133,11 @@ function EditDetail({ input, output, isDark }: { input: unknown; output: unknown
       )}
       {text && (
         <View style={[s.codeBlock, isDark && s.codeBlockDark, { marginTop: 6 }]}>
-          <Text style={[s.codePre, isDark && s.codePteDark]} selectable numberOfLines={40}>
-            {text}
-          </Text>
+          <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false}>
+            <Text style={[s.codePre, isDark && s.codePteDark]} selectable>
+              {text}
+            </Text>
+          </ScrollView>
         </View>
       )}
     </View>
@@ -142,9 +150,11 @@ function PatchDetail({ input, isDark }: { input: unknown; isDark: boolean }) {
     <View style={s.detailSection}>
       {typeof patch === "string" && patch.length > 0 && (
         <View style={[s.codeBlock, isDark && s.codeBlockDark]}>
-          <Text style={[s.codePre, isDark && s.codePteDark]} selectable numberOfLines={60}>
-            {patch}
-          </Text>
+          <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false}>
+            <Text style={[s.codePre, isDark && s.codePteDark]} selectable>
+              {patch}
+            </Text>
+          </ScrollView>
         </View>
       )}
     </View>
@@ -245,9 +255,11 @@ function GenericDetail({ input, output, isDark }: { input: unknown; output: unkn
   return (
     <View style={s.detailSection}>
       <View style={[s.codeBlock, isDark && s.codeBlockDark]}>
-        <Text style={[s.codePre, isDark && s.codePteDark]} selectable numberOfLines={30}>
-          {text}
-        </Text>
+        <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false}>
+          <Text style={[s.codePre, isDark && s.codePteDark]} selectable>
+            {text}
+          </Text>
+        </ScrollView>
       </View>
     </View>
   )
@@ -327,18 +339,20 @@ export function ToolCallCard({ tool, isDark }: Props) {
   }, [hasDetail])
 
   return (
-    <TouchableOpacity
+    <View
       style={[
         s.card,
         isDark && s.cardDark,
         status === "error" && s.cardError,
         status === "error" && isDark && s.cardErrorDark,
       ]}
-      onPress={toggle}
-      activeOpacity={hasDetail ? 0.7 : 1}
     >
-      {/* Header row */}
-      <View style={s.header}>
+      {/* Header row (clickable) */}
+      <TouchableOpacity
+        style={s.header}
+        onPress={toggle}
+        activeOpacity={hasDetail ? 0.7 : 1}
+      >
         <View style={s.headerLeft}>
           <Ionicons name={icon as any} size={16} color={color} />
           <Text style={[s.name, isDark && s.nameDark]} numberOfLines={1}>
@@ -358,19 +372,24 @@ export function ToolCallCard({ tool, isDark }: Props) {
             />
           )}
         </View>
-      </View>
+      </TouchableOpacity>
 
       {/* Error banner */}
       {error && !expanded && <ErrorBanner message={error} isDark={isDark} />}
 
       {/* Expanded detail */}
       {expanded && (
-        <ScrollView style={s.detailScroll} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={s.detailScroll}
+          nestedScrollEnabled={true}
+          showsVerticalScrollIndicator={true}
+          keyboardShouldPersistTaps="handled"
+        >
           {error && <ErrorBanner message={error} isDark={isDark} />}
           <ToolDetail tool={tool} isDark={isDark} />
         </ScrollView>
       )}
-    </TouchableOpacity>
+    </View>
   )
 }
 
