@@ -288,7 +288,11 @@ export default function SessionScreen() {
     }
   }, [directory, id])
 
+  const isScrolledUpRef = useRef(false)
+
   const scrollToBottom = useCallback((animated = true) => {
+    isScrolledUpRef.current = false
+    setShowScrollButton(false)
     flatListRef.current?.scrollToOffset({ offset: 0, animated })
   }, [])
 
@@ -537,6 +541,9 @@ export default function SessionScreen() {
     // Messages are queued server-side when the session is busy.
     // No need to abort - just send and it will be processed after current response.
     try {
+      isScrolledUpRef.current = false
+      setShowScrollButton(false)
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: false })
       await sendMessage(text, model || undefined, agent || undefined, files, variant || undefined)
     } catch (err) {
       console.error("Send failed:", err)
@@ -550,8 +557,24 @@ export default function SessionScreen() {
   // In inverted mode, offset 0 = bottom. Show scroll button when scrolled away from bottom.
   const handleScroll = useCallback((event: any) => {
     const { contentOffset } = event.nativeEvent
+    isScrolledUpRef.current = contentOffset.y > 100
     setShowScrollButton(contentOffset.y > 200)
   }, [])
+
+  const handleContentSizeChange = useCallback(() => {
+    if (!isScrolledUpRef.current) {
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: false })
+    }
+  }, [])
+
+  // Keep latest message visible when messageData updates (streaming text / new messages)
+  useEffect(() => {
+    if (!isScrolledUpRef.current) {
+      requestAnimationFrame(() => {
+        flatListRef.current?.scrollToOffset({ offset: 0, animated: false })
+      })
+    }
+  }, [messageData])
 
   // Debounce: onEndReached can fire multiple times during a single scroll gesture
   const loadingTriggered = useRef(false)
@@ -676,13 +699,6 @@ export default function SessionScreen() {
                   <Text style={[s.dirText, isDark && s.dirTextDark]}>{shortDir}</Text>
                 </View>
               )}
-              <TouchableOpacity onPress={handleRefresh} disabled={refreshing} hitSlop={8} style={{ marginRight: 12 }}>
-                {refreshing ? (
-                  <ActivityIndicator size="small" color={isDark ? "#ffffff" : "#0a0a0a"} />
-                ) : (
-                  <Ionicons name="refresh-outline" size={20} color={isDark ? "#888888" : "#666666"} />
-                )}
-              </TouchableOpacity>
               <TouchableOpacity onPress={() => setShowInfo((v) => !v)} hitSlop={8}>
                 <Ionicons
                   name={showInfo ? "stats-chart" : "stats-chart-outline"}
@@ -773,11 +789,10 @@ export default function SessionScreen() {
               )}
               contentContainerStyle={s.messageList}
               onScroll={handleScroll}
-              scrollEventThrottle={100}
+              scrollEventThrottle={16}
+              onContentSizeChange={handleContentSizeChange}
               onEndReached={handleLoadMore}
               onEndReachedThreshold={0.5}
-              // Prevent jump when older messages are prepended
-              maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
               refreshControl={
                 <RefreshControl
                   refreshing={refreshing}
