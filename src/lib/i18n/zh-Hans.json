@@ -10,10 +10,23 @@
   },
   "settings": {
     "sections": {
+      "models": "模型",
       "security": "安全",
       "notifications": "通知",
       "privacy": "隐私",
       "about": "关于"
+    },
+    "models": {
+      "label": "可见模型",
+      "description": "选择在聊天选择器中显示的模型",
+      "allVisible": "所有模型可见",
+      "countVisible": "已选择 {{count}} 个模型",
+      "searchPlaceholder": "搜索模型或提供商...",
+      "selectAll": "全选",
+      "resetDefault": "恢复默认",
+      "activeCount": "已启用 {{active}}/{{total}}",
+      "emptyNotice": "未找到匹配的模型。",
+      "noConnectedNotice": "未找到已连接的提供商。请先连接到服务器。"
     },
     "security": {
       "biometricOpen": {

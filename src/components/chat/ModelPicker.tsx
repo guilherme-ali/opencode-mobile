@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import BottomSheet, { BottomSheetBackdrop, BottomSheetSectionList, BottomSheetTextInput } from "@gorhom/bottom-sheet"
 import { useTranslation } from "react-i18next"
+import { useSettings } from "../../stores/settings"
 
 interface ModelItem {
   providerID: string
@@ -28,6 +29,7 @@ interface Props {
 export function ModelPicker({ providers, selected, isDark, onSelect, sheetRef }: Props) {
   const { t } = useTranslation()
   const [search, setSearch] = useState("")
+  const enabledModels = useSettings((s) => s.enabledModels)
 
   const sections = useMemo(() => {
     const list = Array.isArray(providers) ? providers : []
@@ -35,13 +37,19 @@ export function ModelPicker({ providers, selected, isDark, onSelect, sheetRef }:
     const result = list
       .map((p) => {
         const models = (p.models || [])
-          .filter(
-            (m) =>
+          .filter((m) => {
+            const key = `${p.id}/${m.id}`
+            const isCurrent = selected?.providerID === p.id && selected?.modelID === m.id
+            const isEnabled = enabledModels === null || enabledModels.includes(key) || isCurrent
+            if (!isEnabled) return false
+
+            return (
               !q ||
               m.id.toLowerCase().includes(q) ||
               m.name.toLowerCase().includes(q) ||
-              p.name.toLowerCase().includes(q),
-          )
+              p.name.toLowerCase().includes(q)
+            )
+          })
           .map((m) => ({
             providerID: p.id,
             providerName: p.name || p.id,

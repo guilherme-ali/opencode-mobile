@@ -41,6 +41,15 @@ test("upgrade path: a category missing from storage gets its default", () => {
   assert.equal("permission" in merged.notifications, true)
 })
 
+test("preserves enabledModels when present or falls back to default", () => {
+  const defaults = { ...DEFAULTS, enabledModels: null }
+  const withSelection = mergeStoredSettings(defaults, { enabledModels: ["anthropic/claude-3-7-sonnet"] })
+  assert.deepEqual(withSelection.enabledModels, ["anthropic/claude-3-7-sonnet"])
+
+  const withoutSelection = mergeStoredSettings(defaults, {})
+  assert.equal(withoutSelection.enabledModels, null)
+})
+
 test("does not mutate the inputs", () => {
   const defaults = { pageSize: 25, notifications: { a: true } }
   const parsed = { notifications: { a: false } }

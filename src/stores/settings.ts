@@ -11,12 +11,14 @@ interface Settings {
   pageSize: number
   notifications: Record<Category, boolean>
   locale: LocalePreference
+  enabledModels: string[] | null
 }
 
 const DEFAULTS: Settings = {
   pageSize: 25,
   notifications: { ...defaultPreferences },
   locale: "system",
+  enabledModels: null,
 }
 
 interface SettingsState extends Settings {
@@ -25,10 +27,19 @@ interface SettingsState extends Settings {
   setPageSize: (size: number) => Promise<void>
   setNotification: (category: Category, enabled: boolean) => Promise<void>
   setLocale: (locale: LocalePreference) => Promise<void>
+  setEnabledModels: (models: string[] | null) => Promise<void>
+  toggleModel: (key: string, allModelKeys: string[]) => Promise<void>
+  setProviderModels: (providerKeys: string[], enabled: boolean, allModelKeys: string[]) => Promise<void>
+  resetModelFilter: () => Promise<void>
 }
 
 function snapshot(get: () => SettingsState): Settings {
-  return { pageSize: get().pageSize, notifications: get().notifications, locale: get().locale }
+  return {
+    pageSize: get().pageSize,
+    notifications: get().notifications,
+    locale: get().locale,
+    enabledModels: get().enabledModels,
+  }
 }
 
 async function persist(settings: Settings) {
@@ -68,5 +79,35 @@ export const useSettings = create<SettingsState>((set, get) => ({
     set({ locale })
     setAppLocale(locale) // applies immediately
     await persist({ ...snapshot(get), locale })
+  },
+
+  setEnabledModels: async (models) => {
+    set({ enabledModels: models })
+    await persist({ ...snapshot(get), enabledModels: models })
+  },
+
+  toggleModel: async (key, allModelKeys) => {
+    const current = get().enabledModels ?? allModelKeys
+    const isCurrentlyEnabled = current.includes(key)
+    const next = isCurrentlyEnabled ? current.filter((k) => k !== key) : [...current, key]
+    set({ enabledModels: next })
+    await persist({ ...snapshot(get), enabledModels: next })
+  },
+
+  setProviderModels: async (providerKeys, enabled, allModelKeys) => {
+    const current = new Set(get().enabledModels ?? allModelKeys)
+    if (enabled) {
+      providerKeys.forEach((k) => current.add(k))
+    } else {
+      providerKeys.forEach((k) => current.delete(k))
+    }
+    const next = Array.from(current)
+    set({ enabledModels: next })
+    await persist({ ...snapshot(get), enabledModels: next })
+  },
+
+  resetModelFilter: async () => {
+    set({ enabledModels: null })
+    await persist({ ...snapshot(get), enabledModels: null })
   },
 }))

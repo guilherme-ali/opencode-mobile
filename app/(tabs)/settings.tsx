@@ -11,6 +11,7 @@ import {
   Alert,
 } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
+import { router } from "expo-router"
 import { useTranslation } from "react-i18next"
 import { useAuth } from "../../src/stores/auth"
 import { useSettings } from "../../src/stores/settings"
@@ -76,7 +77,7 @@ export default function SettingsScreen() {
   const { t } = useTranslation()
 
   const { settings, hasBiometrics, updateSettings, lock } = useAuth()
-  const { notifications, setNotification, locale, setLocale } = useSettings()
+  const { notifications, setNotification, locale, setLocale, enabledModels } = useSettings()
   const [osGranted, setOsGranted] = useState<boolean | null>(null)
   const [telemetryUpdating, setTelemetryUpdating] = useState(false)
 
@@ -157,6 +158,21 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={[styles.container, isDark && styles.containerDark]} contentContainerStyle={styles.content}>
+      <SettingSection title={t("settings.sections.models")} isDark={isDark}>
+        <SettingRow
+          icon="cube-outline"
+          label={t("settings.models.label")}
+          description={
+            enabledModels === null
+              ? t("settings.models.allVisible")
+              : t("settings.models.countVisible", { count: enabledModels.length })
+          }
+          isDark={isDark}
+          onPress={() => router.push("/settings/models")}
+          right={<Ionicons name="chevron-forward" size={20} color={isDark ? "#666666" : "#999999"} />}
+        />
+      </SettingSection>
+
       <SettingSection title={t("settings.sections.security")} isDark={isDark}>
         <SettingRow
           icon="finger-print"

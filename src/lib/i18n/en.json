@@ -10,10 +10,23 @@
   },
   "settings": {
     "sections": {
+      "models": "Models",
       "security": "Security",
       "notifications": "Notifications",
       "privacy": "Privacy",
       "about": "About"
+    },
+    "models": {
+      "label": "Visible Models",
+      "description": "Select which models appear in the chat picker",
+      "allVisible": "All models visible",
+      "countVisible": "{{count}} model(s) selected",
+      "searchPlaceholder": "Search models or providers...",
+      "selectAll": "Select All",
+      "resetDefault": "Reset to Default",
+      "activeCount": "{{active}} of {{total}} active",
+      "emptyNotice": "No models found matching your search.",
+      "noConnectedNotice": "No connected providers found. Connect to a server first."
     },
     "security": {
       "biometricOpen": {
