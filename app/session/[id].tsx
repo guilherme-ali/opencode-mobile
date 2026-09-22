@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   useColorScheme,
-  KeyboardAvoidingView,
   Keyboard,
   Platform,
   ActivityIndicator,
@@ -31,6 +30,7 @@ import {
   VariantPicker,
   ImageAttachments,
   SessionInfo,
+  KeyboardAvoid,
   type SlashCommand,
   type Attachment,
 } from "../../src/components/chat"
@@ -87,16 +87,6 @@ export default function SessionScreen() {
   const [input, setInput] = useState("")
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [showInfo, setShowInfo] = useState(false)
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false)
-
-  useEffect(() => {
-    const showSub = Keyboard.addListener("keyboardDidShow", () => setIsKeyboardVisible(true))
-    const hideSub = Keyboard.addListener("keyboardDidHide", () => setIsKeyboardVisible(false))
-    return () => {
-      showSub.remove()
-      hideSub.remove()
-    }
-  }, [])
 
   const {
     currentSession,
@@ -603,22 +593,10 @@ export default function SessionScreen() {
         }}
       />
 
-      <KeyboardAvoidingView
+      <KeyboardAvoid
         style={[s.container, isDark && s.containerDark]}
-        // Both platforms use "padding" so the composer/toolbar is pushed up
-        // above the keyboard via JS-measured keyboard height.
-        //
-        // Android previously relied on the native android:windowSoftInputMode
-        // (adjustResize, see AndroidManifest.xml) with behavior={undefined}
-        // to let the OS resize the window (see #70/#53). Since adopting
-        // Expo's mandatory edge-to-edge display, Android no longer resizes
-        // the window when the keyboard opens — the system assumes insets are
-        // handled dynamically — so adjustResize became a no-op and the
-        // bottom toolbar + input were left completely hidden behind the
-        // keyboard (#147). "padding" restores avoidance without depending
-        // on native resize.
-        behavior={Platform.OS === "ios" ? "padding" : isKeyboardVisible ? "padding" : undefined}
-        keyboardVerticalOffset={isKeyboardVisible ? keyboardVerticalOffset(Platform.OS, insets.top) : 0}
+        behavior="padding"
+        keyboardVerticalOffset={keyboardVerticalOffset(Platform.OS, insets.top)}
       >
         {/* Session info pulldown */}
         <SessionInfo
@@ -850,7 +828,7 @@ export default function SessionScreen() {
             )}
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardAvoid>
 
       {/* Model picker bottom sheet */}
       <ModelPicker
