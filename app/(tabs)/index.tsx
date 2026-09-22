@@ -15,10 +15,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   Linking,
+  AppState,
 } from "react-native"
 import { router, useFocusEffect } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { useTranslation } from "react-i18next"
+import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useSessions } from "../../src/stores/sessions"
 import { useConnections } from "../../src/stores/connections"
 import { useEvents } from "../../src/stores/events"
@@ -30,6 +32,15 @@ import { groupByDirectory } from "../../src/lib/session-grouping"
 import { UpdateBanner } from "../../src/components/UpdateBanner"
 import { nameOf } from "../../src/lib/path-utils"
 import { SETUP_GUIDE_URL } from "../../src/lib/links"
+import {
+  filterAndSortSessions,
+  getSessionVisualState,
+  type SessionSortOption,
+  type SessionVisualState,
+} from "../../src/lib/session-sort"
+
+const PINNED_STORAGE_KEY = "@opencode/pinned_sessions"
+const SORT_STORAGE_KEY = "@opencode/session_sort"
 
 function formatTime(timestamp: number, t: (key: string, opts?: Record<string, unknown>) => string): string {
   const date = new Date(timestamp)
@@ -47,15 +58,30 @@ function formatTime(timestamp: number, t: (key: string, opts?: Record<string, un
 function SessionItem({
   session,
   isDark,
+  isPinned,
+  onTogglePin,
   onRename,
   onDelete,
 }: {
   session: Session
   isDark: boolean
+  isPinned: boolean
+  onTogglePin: () => void
   onRename: () => void
   onDelete: () => void
 }) {
   const { t } = useTranslation()
+
+  const sessionStatus = useEvents((s) => s.sessionStatus[session.id])
+  const isSending = useSessions((s) => s.sending[session.id])
+  const activeSessionID = useSessions((s) => s.currentSession?.id)
+
+  const visualState: SessionVisualState = getSessionVisualState(
+    session,
+    sessionStatus,
+    isSending,
+    activeSessionID,
+  )
 
   const onPress = () => {
     router.push({
@@ -67,6 +93,10 @@ function SessionItem({
   const onLongPress = () => {
     Alert.alert(session.title || t("sessionsList.untitledSession"), undefined, [
       { text: t("common.cancel"), style: "cancel" },
+      {
+        text: isPinned ? t("sessionsList.actions.unpin") : t("sessionsList.actions.pin"),
+        onPress: onTogglePin,
+      },
       { text: t("sessionsList.actions.rename"), onPress: onRename },
       { text: t("common.delete"), style: "destructive", onPress: onDelete },
     ])
@@ -84,9 +114,44 @@ function SessionItem({
     >
       <View style={styles.sessionContent}>
         <View style={styles.sessionHeader}>
+          {isPinned && (
+            <Ionicons name="pin" size={13} color="#8b5cf6" style={{ marginRight: 5 }} />
+          )}
           <Text style={[styles.sessionTitle, isDark && styles.textDark]} numberOfLines={1}>
             {session.title || t("sessionsList.untitledSession")}
           </Text>
+
+          {/* Visual Status Indicator: Blue (Thinking), Green (Online), Red (Offline) */}
+          <View
+            style={[
+              styles.statusBadge,
+              styles[`statusBadge_${visualState}`],
+              isDark && styles[`statusBadgeDark_${visualState}`],
+            ]}
+          >
+            {visualState === "thinking" ? (
+              <ActivityIndicator
+                size="small"
+                color="#3b82f6"
+                style={{ width: 10, height: 10, marginRight: 3, transform: [{ scale: 0.6 }] }}
+              />
+            ) : (
+              <View style={[styles.statusDot, styles[`statusDot_${visualState}`]]} />
+            )}
+            <Text
+              style={[
+                styles.statusText,
+                styles[`statusText_${visualState}`],
+                isDark && styles[`statusTextDark_${visualState}`],
+              ]}
+            >
+              {visualState === "thinking"
+                ? t("sessionsList.status.thinking", "Pensando...")
+                : visualState === "online"
+                  ? t("sessionsList.status.online", "Ligado")
+                  : t("sessionsList.status.offline", "Desligado")}
+            </Text>
+          </View>
         </View>
         <View style={styles.sessionMetaRow}>
           <Text style={[styles.sessionMeta, isDark && styles.metaDark]}>
@@ -199,6 +264,51 @@ export default function SessionsScreen() {
   // all groups start expanded (#67).
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set())
 
+  const [searchQuery, setSearchQuery] = useState("")
+  const [sortOption, setSortOption] = useState<SessionSortOption>("date-desc")
+  const [showSortModal, setShowSortModal] = useState(false)
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set())
+
+  // Load persisted pinned sessions and sort preference
+  useEffect(() => {
+    AsyncStorage.getItem(PINNED_STORAGE_KEY).then((data) => {
+      if (data) {
+        try {
+          const parsed = JSON.parse(data)
+          if (Array.isArray(parsed)) setPinnedIds(new Set(parsed))
+        } catch {}
+      }
+    })
+    AsyncStorage.getItem(SORT_STORAGE_KEY).then((val) => {
+      if (val && ["date-desc", "date-asc", "name-asc", "name-desc", "status"].includes(val)) {
+        setSortOption(val as SessionSortOption)
+      }
+    })
+  }, [])
+
+  const handleTogglePin = useCallback((sessionID: string) => {
+    setPinnedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(sessionID)) {
+        next.delete(sessionID)
+      } else {
+        next.add(sessionID)
+      }
+      void AsyncStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(Array.from(next)))
+      return next
+    })
+  }, [])
+
+  const handleSelectSort = useCallback((option: SessionSortOption) => {
+    setSortOption(option)
+    setShowSortModal(false)
+    void AsyncStorage.setItem(SORT_STORAGE_KEY, option)
+  }, [])
+
+  const sessionStatusMap = useEvents((s) => s.sessionStatus)
+  const sendingMap = useSessions((s) => s.sending)
+  const currentSession = useSessions((s) => s.currentSession)
+
   const toggleGroup = useCallback((directory: string) => {
     setCollapsedDirs((prev) => {
       const next = new Set(prev)
@@ -208,12 +318,20 @@ export default function SessionsScreen() {
     })
   }, [])
 
-  // Flatten sessions into header+item rows. Skip headers entirely when
-  // everything lives in one directory — a lone header adds noise, not clarity.
+  // Filter and sort sessions, then group by directory
   const rows = useMemo<ListRow[]>(() => {
-    const groups = groupByDirectory(sessions)
+    const sortedFiltered = filterAndSortSessions(sessions, {
+      query: searchQuery,
+      sort: sortOption,
+      pinnedIds,
+      sessionStatusMap,
+      sendingMap,
+      activeSessionID: currentSession?.id,
+    })
+
+    const groups = groupByDirectory(sortedFiltered)
     if (groups.length <= 1) {
-      return sessions.map((session) => ({ type: "session", session }))
+      return sortedFiltered.map((session) => ({ type: "session", session }))
     }
     const out: ListRow[] = []
     for (const group of groups) {
@@ -230,7 +348,7 @@ export default function SessionsScreen() {
       }
     }
     return out
-  }, [sessions, collapsedDirs])
+  }, [sessions, searchQuery, sortOption, pinnedIds, sessionStatusMap, sendingMap, currentSession, collapsedDirs])
 
   // Fetch server-known projects when the new session modal opens
   useEffect(() => {
@@ -256,6 +374,19 @@ export default function SessionsScreen() {
       if (client) {
         loadSessions()
         refreshProject()
+      }
+
+      let active = true
+      const interval = setInterval(() => {
+        if (!active) return
+        if (AppState.currentState === "active" && client) {
+          loadSessions()
+        }
+      }, 6000)
+
+      return () => {
+        active = false
+        clearInterval(interval)
       }
     }, [client, loadSessions, refreshProject]),
   )
@@ -551,6 +682,48 @@ export default function SessionsScreen() {
 
       <UpdateBanner isDark={isDark} />
 
+      {/* Search & Sort Row */}
+      {sessions.length > 0 && (
+        <View style={styles.searchSortContainer}>
+          <View style={[styles.searchRow, isDark && styles.searchRowDark]}>
+            <Ionicons name="search-outline" size={16} color={isDark ? "#888888" : "#666666"} />
+            <TextInput
+              style={[styles.searchInput, isDark && styles.textDark]}
+              placeholder={t("sessionsList.searchPlaceholder", "Search sessions...")}
+              placeholderTextColor={isDark ? "#666666" : "#999999"}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery("")} hitSlop={8}>
+                <Ionicons name="close-circle" size={16} color={isDark ? "#888888" : "#666666"} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <TouchableOpacity
+            style={[styles.sortButton, isDark && styles.sortButtonDark]}
+            onPress={() => setShowSortModal(true)}
+            hitSlop={6}
+          >
+            <Ionicons name="swap-vertical" size={15} color={isDark ? "#a78bfa" : "#7c3aed"} />
+            <Text style={[styles.sortButtonText, isDark && styles.sortButtonTextDark]} numberOfLines={1}>
+              {sortOption === "date-desc"
+                ? t("sessionsList.sort.dateDesc")
+                : sortOption === "date-asc"
+                  ? t("sessionsList.sort.dateAsc")
+                  : sortOption === "name-asc"
+                    ? t("sessionsList.sort.nameAsc")
+                    : sortOption === "name-desc"
+                      ? t("sessionsList.sort.nameDesc")
+                      : t("sessionsList.sort.status")}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <FlatList
         data={rows}
         keyExtractor={(row) => (row.type === "header" ? `dir:${row.directory}` : row.session.id)}
@@ -561,6 +734,8 @@ export default function SessionsScreen() {
             <SessionItem
               session={row.session}
               isDark={isDark}
+              isPinned={pinnedIds.has(row.session.id)}
+              onTogglePin={() => handleTogglePin(row.session.id)}
               onRename={() => handleRename(row.session)}
               onDelete={() => handleDelete(row.session)}
             />
@@ -576,7 +751,11 @@ export default function SessionsScreen() {
             </View>
           ) : (
             <View style={styles.emptyList}>
-              <Text style={[styles.emptyListText, isDark && styles.metaDark]}>{t("sessionsList.empty.noSessions")}</Text>
+              <Text style={[styles.emptyListText, isDark && styles.metaDark]}>
+                {searchQuery.trim()
+                  ? t("sessionsList.empty.noMatchingSessions", "No matching sessions found")
+                  : t("sessionsList.empty.noSessions")}
+              </Text>
             </View>
           )
         }
@@ -853,6 +1032,57 @@ export default function SessionsScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* Sort selection modal */}
+      <Modal visible={showSortModal} animationType="fade" transparent>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowSortModal(false)}
+        >
+          <View style={[styles.sortCard, isDark && styles.sortCardDark]}>
+            <Text style={[styles.sortTitle, isDark && styles.textDark]}>{t("sessionsList.sort.title")}</Text>
+
+            {(
+              [
+                { id: "date-desc", label: t("sessionsList.sort.dateDesc"), icon: "time-outline" },
+                { id: "date-asc", label: t("sessionsList.sort.dateAsc"), icon: "arrow-up-outline" },
+                { id: "name-asc", label: t("sessionsList.sort.nameAsc"), icon: "text-outline" },
+                { id: "name-desc", label: t("sessionsList.sort.nameDesc"), icon: "text-outline" },
+                { id: "status", label: t("sessionsList.sort.status"), icon: "pulse-outline" },
+              ] as const
+            ).map((item) => {
+              const selected = sortOption === item.id
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[
+                    styles.sortOptionRow,
+                    selected && (isDark ? styles.sortOptionRowSelectedDark : styles.sortOptionRowSelected),
+                  ]}
+                  onPress={() => handleSelectSort(item.id)}
+                >
+                  <Ionicons
+                    name={item.icon as any}
+                    size={18}
+                    color={selected ? "#8b5cf6" : isDark ? "#888888" : "#666666"}
+                  />
+                  <Text
+                    style={[
+                      styles.sortOptionText,
+                      isDark && styles.textDark,
+                      selected && styles.sortOptionTextSelected,
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                  {selected && <Ionicons name="checkmark" size={18} color="#8b5cf6" />}
+                </TouchableOpacity>
+              )
+            })}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Directory switcher bottom sheet */}
       <DirectorySwitcher
         sheetRef={dirSheetRef}
@@ -974,14 +1204,168 @@ const styles = StyleSheet.create({
   sessionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   sessionTitle: {
-    fontSize: 16,
-    fontWeight: "500",
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "600",
     color: "#0a0a0a",
-    marginBottom: 4,
+  },
+  // Search & Sort bar
+  searchSortContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  searchRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    height: 38,
+    gap: 6,
+  },
+  searchRowDark: {
+    backgroundColor: "#161616",
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: "#0a0a0a",
+    paddingVertical: 0,
+  },
+  sortButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f5f5f5",
+    paddingHorizontal: 10,
+    height: 38,
+    borderRadius: 8,
+    gap: 4,
+  },
+  sortButtonDark: {
+    backgroundColor: "#161616",
+  },
+  sortButtonText: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "#666666",
+  },
+  sortButtonTextDark: {
+    color: "#aaaaaa",
+  },
+
+  // Status badges
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginLeft: 6,
+  },
+  statusBadge_thinking: {
+    backgroundColor: "#eff6ff",
+  },
+  statusBadgeDark_thinking: {
+    backgroundColor: "rgba(59, 130, 246, 0.15)",
+  },
+  statusBadge_online: {
+    backgroundColor: "#f0fdf4",
+  },
+  statusBadgeDark_online: {
+    backgroundColor: "rgba(34, 197, 94, 0.15)",
+  },
+  statusBadge_offline: {
+    backgroundColor: "#fef2f2",
+  },
+  statusBadgeDark_offline: {
+    backgroundColor: "rgba(239, 68, 68, 0.12)",
+  },
+
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 4,
+  },
+  statusDot_online: {
+    backgroundColor: "#22c55e",
+  },
+  statusDot_offline: {
+    backgroundColor: "#ef4444",
+  },
+
+  statusText: {
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  statusText_thinking: {
+    color: "#2563eb",
+  },
+  statusTextDark_thinking: {
+    color: "#60a5fa",
+  },
+  statusText_online: {
+    color: "#16a34a",
+  },
+  statusTextDark_online: {
+    color: "#4ade80",
+  },
+  statusText_offline: {
+    color: "#dc2626",
+  },
+  statusTextDark_offline: {
+    color: "#f87171",
+  },
+
+  // Sort modal
+  sortCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    padding: 16,
+    width: "85%",
+    maxWidth: 340,
+    gap: 6,
+  },
+  sortCardDark: {
+    backgroundColor: "#161616",
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+  },
+  sortTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#0a0a0a",
+    marginBottom: 8,
+  },
+  sortOptionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    gap: 10,
+  },
+  sortOptionRowSelected: {
+    backgroundColor: "#f5f3ff",
+  },
+  sortOptionRowSelectedDark: {
+    backgroundColor: "rgba(139, 92, 246, 0.15)",
+  },
+  sortOptionText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#333333",
+  },
+  sortOptionTextSelected: {
+    color: "#8b5cf6",
+    fontWeight: "600",
   },
   textDark: {
     color: "#ffffff",

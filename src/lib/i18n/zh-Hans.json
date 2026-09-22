@@ -273,6 +273,20 @@
   },
   "sessionsList": {
     "untitledSession": "未命名会话",
+    "searchPlaceholder": "搜索会话...",
+    "status": {
+      "thinking": "思考中...",
+      "online": "在线",
+      "offline": "离线"
+    },
+    "sort": {
+      "title": "排序方式",
+      "dateDesc": "日期（最新）",
+      "dateAsc": "日期（最早）",
+      "nameAsc": "名称（A-Z）",
+      "nameDesc": "名称（Z-A）",
+      "status": "状态"
+    },
     "time": {
       "justNow": "刚刚",
       "minutesAgo": "{{count}} 分钟前",
@@ -281,7 +295,9 @@
     },
     "filesCount": "{{count}} 个文件",
     "actions": {
-      "rename": "重命名"
+      "rename": "重命名",
+      "pin": "置顶会话",
+      "unpin": "取消置顶"
     },
     "alerts": {
       "renameFailedTitle": "重命名失败",

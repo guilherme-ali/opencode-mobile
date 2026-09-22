@@ -273,6 +273,20 @@
   },
   "sessionsList": {
     "untitledSession": "Untitled Session",
+    "searchPlaceholder": "Search sessions...",
+    "status": {
+      "thinking": "Thinking...",
+      "online": "Online",
+      "offline": "Offline"
+    },
+    "sort": {
+      "title": "Sort Sessions",
+      "dateDesc": "Date (Newest)",
+      "dateAsc": "Date (Oldest)",
+      "nameAsc": "Name (A-Z)",
+      "nameDesc": "Name (Z-A)",
+      "status": "Status"
+    },
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
@@ -281,7 +295,9 @@
     },
     "filesCount": "{{count}} files",
     "actions": {
-      "rename": "Rename"
+      "rename": "Rename",
+      "pin": "Pin to top",
+      "unpin": "Unpin"
     },
     "alerts": {
       "renameFailedTitle": "Rename failed",
