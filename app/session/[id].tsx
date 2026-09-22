@@ -8,6 +8,7 @@ import {
   StyleSheet,
   useColorScheme,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   ActivityIndicator,
   Alert,
@@ -86,6 +87,16 @@ export default function SessionScreen() {
   const [input, setInput] = useState("")
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [showInfo, setShowInfo] = useState(false)
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false)
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardDidShow", () => setIsKeyboardVisible(true))
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => setIsKeyboardVisible(false))
+    return () => {
+      showSub.remove()
+      hideSub.remove()
+    }
+  }, [])
 
   const {
     currentSession,
@@ -606,8 +617,8 @@ export default function SessionScreen() {
         // bottom toolbar + input were left completely hidden behind the
         // keyboard (#147). "padding" restores avoidance without depending
         // on native resize.
-        behavior="padding"
-        keyboardVerticalOffset={keyboardVerticalOffset(Platform.OS, insets.top)}
+        behavior={Platform.OS === "ios" ? "padding" : isKeyboardVisible ? "padding" : undefined}
+        keyboardVerticalOffset={isKeyboardVisible ? keyboardVerticalOffset(Platform.OS, insets.top) : 0}
       >
         {/* Session info pulldown */}
         <SessionInfo
