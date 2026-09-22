@@ -11,6 +11,8 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  AppState,
+  RefreshControl,
 } from "react-native"
 import { useLocalSearchParams, Stack, useRouter, useFocusEffect } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
@@ -41,6 +43,7 @@ import { useAuth } from "../../src/stores/auth"
 import { useCatalog } from "../../src/stores/catalog"
 import { useSpeech } from "../../src/lib/speech"
 import { keyboardVerticalOffset } from "../../src/lib/keyboard-offset"
+import { isSessionActuallyIdle } from "../../src/lib/session-status-reconcile"
 
 // --- Builtin slash commands ---
 const BUILTIN_COMMANDS: SlashCommand[] = [
@@ -253,6 +256,38 @@ export default function SessionScreen() {
     ])
   }, [applyRevertResult, t])
 
+  const [refreshing, setRefreshing] = useState(false)
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      const result = await useSessions.getState().refreshMessages()
+      if (result && id) {
+        const { messages: msgs } = result
+        const isBusy = msgs.length > 0 && !isSessionActuallyIdle(msgs)
+        const currentStatus = useEvents.getState().sessionStatus[id]
+        if (isBusy) {
+          if (currentStatus?.type !== "busy") {
+            useEvents.setState((state) => ({
+              sessionStatus: { ...state.sessionStatus, [id]: { type: "busy" } },
+            }))
+          }
+        } else if (currentStatus?.type === "busy") {
+          useEvents.setState((state) => ({
+            sessionStatus: { ...state.sessionStatus, [id]: { type: "idle" } },
+            statusText: { ...state.statusText, [id]: "" },
+          }))
+          useSessions.setState((state) => ({ sending: { ...state.sending, [id]: false } }))
+        }
+      }
+      const connState = useConnections.getState()
+      const c = directory ? (connState.clientForDirectory(directory) ?? connState.client) : connState.client
+      if (c && id) refreshPending(c, id)
+    } finally {
+      setRefreshing(false)
+    }
+  }, [directory, id])
+
   const scrollToBottom = useCallback((animated = true) => {
     flatListRef.current?.scrollToOffset({ offset: 0, animated })
   }, [])
@@ -264,9 +299,17 @@ export default function SessionScreen() {
   // session's data (and its permission/question prompts) — so a user could
   // approve the wrong session's tool call. useFocusEffect re-binds this screen
   // to its own session whenever it becomes visible again.
+  //
+  // In addition, run an active background sync loop while the screen is focused
+  // so that prompts sent from PC or other clients stream in continuously without
+  // requiring the user to exit and re-enter the chat.
   useFocusEffect(
     useCallback(() => {
       if (!id) return
+
+      let active = true
+      let pollTimer: ReturnType<typeof setTimeout> | null = null
+
       selectSession(id, directory).then(() => {
         // Re-fetch pending permissions/questions from the server to recover from
         // missed SSE events or failed optimistic removals
@@ -274,7 +317,59 @@ export default function SessionScreen() {
         const c = directory ? (connState.clientForDirectory(directory) ?? connState.client) : connState.client
         if (c) refreshPending(c, id)
       })
-    }, [id, directory]),
+
+      const poll = async () => {
+        if (!active) return
+        if (AppState.currentState === "active") {
+          try {
+            const result = await useSessions.getState().refreshMessages()
+            if (result && active) {
+              const { messages: msgs } = result
+              const isBusy = msgs.length > 0 && !isSessionActuallyIdle(msgs)
+              const currentStatus = useEvents.getState().sessionStatus[id]
+              if (isBusy) {
+                if (currentStatus?.type !== "busy") {
+                  useEvents.setState((state) => ({
+                    sessionStatus: { ...state.sessionStatus, [id]: { type: "busy" } },
+                  }))
+                }
+              } else if (currentStatus?.type === "busy") {
+                useEvents.setState((state) => ({
+                  sessionStatus: { ...state.sessionStatus, [id]: { type: "idle" } },
+                  statusText: { ...state.statusText, [id]: "" },
+                }))
+                useSessions.setState((state) => ({ sending: { ...state.sending, [id]: false } }))
+              }
+            }
+          } catch (err) {
+            console.warn("[SessionScreen] poll error:", err)
+          }
+        }
+        if (!active) return
+
+        const sessionStatus = useEvents.getState().sessionStatus[id]
+        const isBusy = sessionStatus?.type === "busy" || useSessions.getState().sending[id]
+        const nextDelay = isBusy ? 1500 : 3500
+
+        pollTimer = setTimeout(poll, nextDelay)
+      }
+
+      // Start the sync loop shortly after mount/focus
+      pollTimer = setTimeout(poll, 1500)
+
+      // Also listen to app state changes (resume from background triggers immediate poll)
+      const sub = AppState.addEventListener("change", (state) => {
+        if (state === "active" && active) {
+          void poll()
+        }
+      })
+
+      return () => {
+        active = false
+        if (pollTimer) clearTimeout(pollTimer)
+        sub.remove()
+      }
+    }, [id, directory, selectSession]),
   )
 
   // Sync model chip from latest assistant message
@@ -581,6 +676,13 @@ export default function SessionScreen() {
                   <Text style={[s.dirText, isDark && s.dirTextDark]}>{shortDir}</Text>
                 </View>
               )}
+              <TouchableOpacity onPress={handleRefresh} disabled={refreshing} hitSlop={8} style={{ marginRight: 12 }}>
+                {refreshing ? (
+                  <ActivityIndicator size="small" color={isDark ? "#ffffff" : "#0a0a0a"} />
+                ) : (
+                  <Ionicons name="refresh-outline" size={20} color={isDark ? "#888888" : "#666666"} />
+                )}
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => setShowInfo((v) => !v)} hitSlop={8}>
                 <Ionicons
                   name={showInfo ? "stats-chart" : "stats-chart-outline"}
@@ -676,6 +778,14 @@ export default function SessionScreen() {
               onEndReachedThreshold={0.5}
               // Prevent jump when older messages are prepended
               maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={handleRefresh}
+                  tintColor="#8b5cf6"
+                  colors={["#8b5cf6"]}
+                />
+              }
               ListFooterComponent={
                 loadingMore ? (
                   <View style={s.loadingMore}>

@@ -51,7 +51,7 @@ interface SessionsState {
     variant?: string,
   ) => Promise<void>
   abortSession: () => Promise<void>
-  refreshMessages: () => Promise<void>
+  refreshMessages: () => Promise<{ messages: Message[]; parts: Record<string, Part[]> } | null>
 
   // Revert (edit sent message) / unrevert (undo the pending revert)
   revertToMessage: (messageID: string) => Promise<RevertResult>
@@ -353,14 +353,36 @@ export const useSessions = create<SessionsState>((set, get) => ({
   refreshMessages: async () => {
     const client = clientFor(get().currentSession?.directory)
     const session = get().currentSession
-    if (!client || !session) return
+    if (!client || !session) return null
 
     try {
       const response = await client.session.messages(session.id)
-      const { messages, parts } = parseMessages(response)
-      set({ messages, parts })
+      const { messages: serverMessages, parts: serverParts } = parseMessages(response)
+
+      // Retain any pending optimistic messages (temp-*) that have not yet been echoed by the server
+      const currentMessages = get().messages
+      const currentParts = get().parts
+      const pendingTemps = currentMessages.filter(
+        (m) =>
+          m.id.startsWith("temp-") &&
+          !serverMessages.some(
+            (sm) => sm.role === m.role && Math.abs((sm.time?.created ?? 0) - (m.time?.created ?? 0)) < 15000,
+          ),
+      )
+
+      const mergedMessages = [...serverMessages, ...pendingTemps]
+      const mergedParts = { ...serverParts }
+      for (const tm of pendingTemps) {
+        if (currentParts[tm.id]) {
+          mergedParts[tm.id] = currentParts[tm.id]
+        }
+      }
+
+      set({ messages: mergedMessages, parts: mergedParts })
+      return { messages: mergedMessages, parts: mergedParts }
     } catch (error) {
-      set({ error: "Failed to refresh messages" })
+      console.warn("[Sessions] Failed to refresh messages:", error)
+      return null
     }
   },
 
