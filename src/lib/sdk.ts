@@ -322,6 +322,10 @@ export function createClient(config: ClientConfig) {
         const query = new URLSearchParams({ path: params.path ?? "." })
         return request<FileEntry[]>(config, `/file?${query.toString()}`)
       },
+      content: (path: string) => {
+        const query = new URLSearchParams({ path })
+        return request<{ type: string; content: string }>(config, `/file/content?${query.toString()}`)
+      },
       // Enumerate the server's filesystem roots (mounted drives, home dir)
       // to seed the directory browser's pinned top-level entries. Resolves
       // to null on servers that don't yet expose GET /file/roots (older

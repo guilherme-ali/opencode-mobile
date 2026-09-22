@@ -28,6 +28,21 @@
       "emptyNotice": "未找到匹配的模型。",
       "noConnectedNotice": "未找到已连接的提供商。请先连接到服务器。"
     },
+    "usage": {
+      "label": "使用与限制",
+      "description": "查看 AI 提供商的 5 小时和每周配额",
+      "title": "使用与限制",
+      "refresh": "刷新",
+      "lastUpdated": "更新于 {{time}}",
+      "emptyNotice": "未找到配额数据。请先连接到服务器或发送消息。",
+      "fiveHour": "5小时限制",
+      "weekly": "每周限制",
+      "used": "已使用 {{percent}}%",
+      "remaining": "剩余 {{percent}}%",
+      "resetsIn": "{{time}} 后重置",
+      "resetTime": "将在 {{time}} 重置",
+      "account": "账号：{{label}}"
+    },
     "security": {
       "biometricOpen": {
         "label": "解锁时需要生物识别",
@@ -426,6 +441,15 @@
       "loading": "加载中...",
       "loadAllMessages": "加载全部消息",
       "jumpToBeginning": "跳转到开头",
+      "quota": {
+        "title": "模型使用限制",
+        "fiveHour": "5小时限制",
+        "weekly": "每周限制",
+        "used": "已使用 {{percent}}%",
+        "remaining": "剩余 {{percent}}%",
+        "resetsIn": "{{time}} 后重置",
+        "noLimits": "此提供商无使用限制"
+      },
       "pills": {
         "in": "输入",
         "out": "输出",

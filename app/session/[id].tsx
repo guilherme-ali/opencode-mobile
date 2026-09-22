@@ -603,6 +603,7 @@ export default function SessionScreen() {
           session={currentSession}
           messages={messages || []}
           providers={providers}
+          selectedModel={model}
           visible={showInfo}
           isDark={isDark}
           hasMore={hasMore}

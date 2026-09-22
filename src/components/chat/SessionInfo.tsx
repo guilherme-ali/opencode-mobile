@@ -1,14 +1,16 @@
-import { useMemo } from "react"
+import { useEffect, useMemo } from "react"
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { useTranslation } from "react-i18next"
 import type { Message, Session } from "../../lib/sdk"
 import type { Provider } from "../../stores/catalog"
+import { useQuota } from "../../stores/quota"
 
 interface Props {
   session: Session | null
   messages: Message[]
   providers: Provider[]
+  selectedModel?: { providerID: string; modelID: string } | null
   visible: boolean
   isDark: boolean
   hasMore: boolean
@@ -44,6 +46,7 @@ export function SessionInfo({
   session,
   messages,
   providers,
+  selectedModel,
   visible,
   isDark,
   hasMore,
@@ -53,6 +56,34 @@ export function SessionInfo({
   onClose,
 }: Props) {
   const { t } = useTranslation()
+  const { getQuotaForModel, load: loadQuota } = useQuota()
+
+  useEffect(() => {
+    if (visible) {
+      void loadQuota()
+    }
+  }, [visible, loadQuota])
+
+  // Resolve active model and provider for quota display
+  const activeModel = useMemo(() => {
+    if (selectedModel?.providerID && selectedModel?.modelID) {
+      return selectedModel
+    }
+    // Fallback to last assistant message
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i]
+      if (msg.role === "assistant" && msg.providerID && msg.modelID) {
+        return { providerID: msg.providerID, modelID: msg.modelID }
+      }
+    }
+    return null
+  }, [selectedModel, messages])
+
+  const quota = useMemo(() => {
+    if (!activeModel) return null
+    return getQuotaForModel(activeModel.providerID, activeModel.modelID)
+  }, [activeModel, getQuotaForModel])
+
   // Match TUI: last assistant message tokens (context window), cumulative cost
   const stats = useMemo(() => {
     let cost = 0
@@ -125,6 +156,89 @@ export function SessionInfo({
               stats.percent > 80 ? s.barWarn : stats.percent > 50 ? s.barMid : s.barOk,
             ]}
           />
+        </View>
+      )}
+
+      {/* Model rate limits (5h & weekly) */}
+      {quota && (quota.fiveHour || quota.weekly) && (
+        <View style={[s.quotaSection, isDark && s.quotaSectionDark]}>
+          <View style={s.quotaHeader}>
+            <View style={s.quotaTitleRow}>
+              <Ionicons name="speedometer-outline" size={13} color="#8b5cf6" />
+              <Text style={[s.quotaTitle, isDark && s.textDark]}>
+                {t("chat.sessionInfo.quota.title")}
+              </Text>
+            </View>
+            <Text style={[s.quotaModelBadge, isDark && s.quotaModelBadgeDark]} numberOfLines={1}>
+              {quota.model || activeModel?.modelID}
+            </Text>
+          </View>
+
+          {quota.fiveHour && (
+            <View style={s.limitItem}>
+              <View style={s.limitLabelRow}>
+                <Text style={[s.limitName, isDark && s.textDark]}>
+                  {t("chat.sessionInfo.quota.fiveHour")}
+                </Text>
+                <View style={s.limitValuesRow}>
+                  <Text style={[s.limitPercent, isDark && s.textDark]}>
+                    {t("chat.sessionInfo.quota.used", { percent: quota.fiveHour.usedPercent })}
+                  </Text>
+                  {quota.fiveHour.resetIn ? (
+                    <Text style={[s.limitReset, isDark && s.dimDark]}>
+                      • {t("chat.sessionInfo.quota.resetsIn", { time: quota.fiveHour.resetIn })}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+              <View style={[s.bar, isDark && s.barDark]}>
+                <View
+                  style={[
+                    s.barFill,
+                    { width: `${Math.min(quota.fiveHour.usedPercent, 100)}%` },
+                    quota.fiveHour.usedPercent > 90
+                      ? s.barWarn
+                      : quota.fiveHour.usedPercent > 70
+                        ? s.barMid
+                        : s.barOk,
+                  ]}
+                />
+              </View>
+            </View>
+          )}
+
+          {quota.weekly && (
+            <View style={s.limitItem}>
+              <View style={s.limitLabelRow}>
+                <Text style={[s.limitName, isDark && s.textDark]}>
+                  {t("chat.sessionInfo.quota.weekly")}
+                </Text>
+                <View style={s.limitValuesRow}>
+                  <Text style={[s.limitPercent, isDark && s.textDark]}>
+                    {t("chat.sessionInfo.quota.used", { percent: quota.weekly.usedPercent })}
+                  </Text>
+                  {quota.weekly.resetIn ? (
+                    <Text style={[s.limitReset, isDark && s.dimDark]}>
+                      • {t("chat.sessionInfo.quota.resetsIn", { time: quota.weekly.resetIn })}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+              <View style={[s.bar, isDark && s.barDark]}>
+                <View
+                  style={[
+                    s.barFill,
+                    { width: `${Math.min(quota.weekly.usedPercent, 100)}%` },
+                    quota.weekly.usedPercent > 90
+                      ? s.barWarn
+                      : quota.weekly.usedPercent > 70
+                        ? s.barMid
+                        : s.barOk,
+                  ]}
+                />
+              </View>
+            </View>
+          )}
         </View>
       )}
 
@@ -331,6 +445,70 @@ const s = StyleSheet.create({
   actions: {
     flexDirection: "row",
     gap: 8,
+  },
+  quotaSection: {
+    backgroundColor: "#ffffff",
+    borderRadius: 8,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#e5e5e5",
+    gap: 8,
+  },
+  quotaSectionDark: {
+    backgroundColor: "#161616",
+    borderColor: "#2a2a2a",
+  },
+  quotaHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  quotaTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  quotaTitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#0a0a0a",
+  },
+  quotaModelBadge: {
+    fontSize: 11,
+    color: "#8b5cf6",
+    fontWeight: "500",
+    maxWidth: 160,
+  },
+  quotaModelBadgeDark: {
+    color: "#a78bfa",
+  },
+  limitItem: {
+    gap: 4,
+  },
+  limitLabelRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  limitName: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#444444",
+  },
+  limitValuesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  limitPercent: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#0a0a0a",
+    fontVariant: ["tabular-nums"],
+  },
+  limitReset: {
+    fontSize: 11,
+    color: "#888888",
   },
   action: {
     flexDirection: "row",

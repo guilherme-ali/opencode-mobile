@@ -28,6 +28,21 @@
       "emptyNotice": "No models found matching your search.",
       "noConnectedNotice": "No connected providers found. Connect to a server first."
     },
+    "usage": {
+      "label": "Usage & Limits",
+      "description": "View 5h and weekly quotas for AI providers",
+      "title": "Usage & Limits",
+      "refresh": "Refresh",
+      "lastUpdated": "Updated {{time}}",
+      "emptyNotice": "No quota data found. Connect to a server or send a message first.",
+      "fiveHour": "5h Limit",
+      "weekly": "Weekly Limit",
+      "used": "{{percent}}% used",
+      "remaining": "{{percent}}% remaining",
+      "resetsIn": "resets in {{time}}",
+      "resetTime": "Resets at {{time}}",
+      "account": "Account: {{label}}"
+    },
     "security": {
       "biometricOpen": {
         "label": "Require Biometric to Open",
@@ -426,6 +441,15 @@
       "loading": "Loading...",
       "loadAllMessages": "Load all messages",
       "jumpToBeginning": "Jump to beginning",
+      "quota": {
+        "title": "Model Rate Limits",
+        "fiveHour": "5h Limit",
+        "weekly": "Weekly Limit",
+        "used": "{{percent}}% used",
+        "remaining": "{{percent}}% remaining",
+        "resetsIn": "resets in {{time}}",
+        "noLimits": "No rate limits for this provider"
+      },
       "pills": {
         "in": "In",
         "out": "Out",
