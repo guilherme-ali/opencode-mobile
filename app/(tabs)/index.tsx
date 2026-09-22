@@ -35,6 +35,7 @@ import { SETUP_GUIDE_URL } from "../../src/lib/links"
 import {
   filterAndSortSessions,
   getSessionVisualState,
+  extractProjectDirectories,
   type SessionSortOption,
   type SessionVisualState,
 } from "../../src/lib/session-sort"
@@ -59,16 +60,18 @@ function SessionItem({
   session,
   isDark,
   isPinned,
-  onTogglePin,
-  onRename,
-  onDelete,
+  isSelectionMode,
+  isSelected,
+  onToggleSelect,
+  onOpenMenu,
 }: {
   session: Session
   isDark: boolean
   isPinned: boolean
-  onTogglePin: () => void
-  onRename: () => void
-  onDelete: () => void
+  isSelectionMode: boolean
+  isSelected: boolean
+  onToggleSelect: () => void
+  onOpenMenu: () => void
 }) {
   const { t } = useTranslation()
 
@@ -84,22 +87,14 @@ function SessionItem({
   )
 
   const onPress = () => {
-    router.push({
-      pathname: `/session/[id]`,
-      params: { id: session.id, ...(session.directory ? { directory: session.directory } : {}) },
-    })
-  }
-
-  const onLongPress = () => {
-    Alert.alert(session.title || t("sessionsList.untitledSession"), undefined, [
-      { text: t("common.cancel"), style: "cancel" },
-      {
-        text: isPinned ? t("sessionsList.actions.unpin") : t("sessionsList.actions.pin"),
-        onPress: onTogglePin,
-      },
-      { text: t("sessionsList.actions.rename"), onPress: onRename },
-      { text: t("common.delete"), style: "destructive", onPress: onDelete },
-    ])
+    if (isSelectionMode) {
+      onToggleSelect()
+    } else {
+      router.push({
+        pathname: `/session/[id]`,
+        params: { id: session.id, ...(session.directory ? { directory: session.directory } : {}) },
+      })
+    }
   }
 
   // Extract short directory name from session
@@ -107,11 +102,26 @@ function SessionItem({
 
   return (
     <TouchableOpacity
-      style={[styles.sessionItem, isDark && styles.sessionItemDark]}
+      style={[
+        styles.sessionItem,
+        isDark && styles.sessionItemDark,
+        isSelected && (isDark ? styles.sessionItemSelectedDark : styles.sessionItemSelected),
+      ]}
       onPress={onPress}
-      onLongPress={onLongPress}
+      onLongPress={isSelectionMode ? onToggleSelect : onOpenMenu}
       testID={`session-item-${session.id}`}
+      activeOpacity={0.7}
     >
+      {isSelectionMode && (
+        <View style={styles.checkboxContainer}>
+          <Ionicons
+            name={isSelected ? "checkbox" : "square-outline"}
+            size={22}
+            color={isSelected ? "#8b5cf6" : isDark ? "#666666" : "#aaaaaa"}
+          />
+        </View>
+      )}
+
       <View style={styles.sessionContent}>
         <View style={styles.sessionHeader}>
           {isPinned && (
@@ -170,7 +180,12 @@ function SessionItem({
           )}
         </View>
       </View>
-      <Ionicons name="chevron-forward" size={20} color={isDark ? "#666666" : "#999999"} />
+
+      {!isSelectionMode && (
+        <TouchableOpacity onPress={onOpenMenu} hitSlop={12} style={styles.menuTrigger}>
+          <Ionicons name="ellipsis-vertical" size={16} color={isDark ? "#666666" : "#aaaaaa"} />
+        </TouchableOpacity>
+      )}
     </TouchableOpacity>
   )
 }
@@ -269,6 +284,15 @@ export default function SessionsScreen() {
   const [showSortModal, setShowSortModal] = useState(false)
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set())
 
+  // Project filtering & Batch selection states
+  const [selectedProjectDir, setSelectedProjectDir] = useState<string | null>(null)
+  const [isSelectionMode, setIsSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [actionSession, setActionSession] = useState<Session | null>(null)
+  const [showSingleDeleteConfirm, setShowSingleDeleteConfirm] = useState(false)
+  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false)
+  const [isDeletingBatch, setIsDeletingBatch] = useState(false)
+
   // Load persisted pinned sessions and sort preference
   useEffect(() => {
     AsyncStorage.getItem(PINNED_STORAGE_KEY).then((data) => {
@@ -305,9 +329,23 @@ export default function SessionsScreen() {
     void AsyncStorage.setItem(SORT_STORAGE_KEY, option)
   }, [])
 
+  const handleToggleSelect = useCallback((sessionID: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(sessionID)) {
+        next.delete(sessionID)
+      } else {
+        next.add(sessionID)
+      }
+      return next
+    })
+  }, [])
+
   const sessionStatusMap = useEvents((s) => s.sessionStatus)
   const sendingMap = useSessions((s) => s.sending)
   const currentSession = useSessions((s) => s.currentSession)
+
+  const projectDirectories = useMemo(() => extractProjectDirectories(sessions), [sessions])
 
   const toggleGroup = useCallback((directory: string) => {
     setCollapsedDirs((prev) => {
@@ -319,15 +357,22 @@ export default function SessionsScreen() {
   }, [])
 
   // Filter and sort sessions, then group by directory
-  const rows = useMemo<ListRow[]>(() => {
-    const sortedFiltered = filterAndSortSessions(sessions, {
+  const sortedFiltered = useMemo(() => {
+    return filterAndSortSessions(sessions, {
       query: searchQuery,
       sort: sortOption,
       pinnedIds,
       sessionStatusMap,
       sendingMap,
       activeSessionID: currentSession?.id,
+      directoryFilter: selectedProjectDir,
     })
+  }, [sessions, searchQuery, sortOption, pinnedIds, sessionStatusMap, sendingMap, currentSession, selectedProjectDir])
+
+  const rows = useMemo<ListRow[]>(() => {
+    if (isSelectionMode || selectedProjectDir) {
+      return sortedFiltered.map((session) => ({ type: "session", session }))
+    }
 
     const groups = groupByDirectory(sortedFiltered)
     if (groups.length <= 1) {
@@ -348,7 +393,7 @@ export default function SessionsScreen() {
       }
     }
     return out
-  }, [sessions, searchQuery, sortOption, pinnedIds, sessionStatusMap, sendingMap, currentSession, collapsedDirs])
+  }, [sortedFiltered, isSelectionMode, selectedProjectDir, collapsedDirs])
 
   // Fetch server-known projects when the new session modal opens
   useEffect(() => {
@@ -682,45 +727,159 @@ export default function SessionsScreen() {
 
       <UpdateBanner isDark={isDark} />
 
-      {/* Search & Sort Row */}
+      {/* Search & Sort & Selection Row */}
       {sessions.length > 0 && (
         <View style={styles.searchSortContainer}>
-          <View style={[styles.searchRow, isDark && styles.searchRowDark]}>
-            <Ionicons name="search-outline" size={16} color={isDark ? "#888888" : "#666666"} />
-            <TextInput
-              style={[styles.searchInput, isDark && styles.textDark]}
-              placeholder={t("sessionsList.searchPlaceholder", "Search sessions...")}
-              placeholderTextColor={isDark ? "#666666" : "#999999"}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery("")} hitSlop={8}>
-                <Ionicons name="close-circle" size={16} color={isDark ? "#888888" : "#666666"} />
-              </TouchableOpacity>
-            )}
-          </View>
+          {isSelectionMode ? (
+            <View style={styles.selectionModeBar}>
+              <View style={styles.selectionLeft}>
+                <Text style={[styles.selectionCountText, isDark && styles.textDark]}>
+                  {t("sessionsList.selection.selectedCount", { count: selectedIds.size })}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    if (selectedIds.size === sortedFiltered.length) {
+                      setSelectedIds(new Set())
+                    } else {
+                      setSelectedIds(new Set(sortedFiltered.map((s) => s.id)))
+                    }
+                  }}
+                  hitSlop={6}
+                >
+                  <Text style={styles.selectAllBtn}>
+                    {selectedIds.size === sortedFiltered.length
+                      ? t("sessionsList.selection.clearAll", "Desmarcar todas")
+                      : t("sessionsList.selection.selectAll", "Selecionar todas")}
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
-          <TouchableOpacity
-            style={[styles.sortButton, isDark && styles.sortButtonDark]}
-            onPress={() => setShowSortModal(true)}
-            hitSlop={6}
+              <TouchableOpacity
+                style={styles.cancelSelectionBtn}
+                onPress={() => {
+                  setIsSelectionMode(false)
+                  setSelectedIds(new Set())
+                }}
+                hitSlop={6}
+              >
+                <Text style={[styles.cancelSelectionText, isDark && styles.textDark]}>
+                  {t("sessionsList.selection.cancel", "Cancelar")}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.searchSortRow}>
+              <View style={[styles.searchRow, isDark && styles.searchRowDark]}>
+                <Ionicons name="search-outline" size={16} color={isDark ? "#888888" : "#666666"} />
+                <TextInput
+                  style={[styles.searchInput, isDark && styles.textDark]}
+                  placeholder={t("sessionsList.searchPlaceholder", "Search sessions...")}
+                  placeholderTextColor={isDark ? "#666666" : "#999999"}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearchQuery("")} hitSlop={8}>
+                    <Ionicons name="close-circle" size={16} color={isDark ? "#888888" : "#666666"} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <TouchableOpacity
+                style={[styles.sortButton, isDark && styles.sortButtonDark]}
+                onPress={() => setShowSortModal(true)}
+                hitSlop={6}
+              >
+                <Ionicons name="swap-vertical" size={15} color={isDark ? "#a78bfa" : "#7c3aed"} />
+                <Text style={[styles.sortButtonText, isDark && styles.sortButtonTextDark]} numberOfLines={1}>
+                  {sortOption === "date-desc"
+                    ? t("sessionsList.sort.dateDesc")
+                    : sortOption === "date-asc"
+                      ? t("sessionsList.sort.dateAsc")
+                      : sortOption === "name-asc"
+                        ? t("sessionsList.sort.nameAsc")
+                        : sortOption === "name-desc"
+                          ? t("sessionsList.sort.nameDesc")
+                          : t("sessionsList.sort.status")}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.iconButton, isDark && styles.iconButtonDark]}
+                onPress={() => setIsSelectionMode(true)}
+                hitSlop={6}
+              >
+                <Ionicons name="checkbox-outline" size={17} color={isDark ? "#a78bfa" : "#7c3aed"} />
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Project Chips (Horizontal scrollable bar) */}
+      {!isSelectionMode && projectDirectories.length > 1 && (
+        <View style={styles.chipsContainer}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipsScrollContent}
           >
-            <Ionicons name="swap-vertical" size={15} color={isDark ? "#a78bfa" : "#7c3aed"} />
-            <Text style={[styles.sortButtonText, isDark && styles.sortButtonTextDark]} numberOfLines={1}>
-              {sortOption === "date-desc"
-                ? t("sessionsList.sort.dateDesc")
-                : sortOption === "date-asc"
-                  ? t("sessionsList.sort.dateAsc")
-                  : sortOption === "name-asc"
-                    ? t("sessionsList.sort.nameAsc")
-                    : sortOption === "name-desc"
-                      ? t("sessionsList.sort.nameDesc")
-                      : t("sessionsList.sort.status")}
-            </Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.chip,
+                isDark && styles.chipDark,
+                selectedProjectDir === null && styles.chipActive,
+              ]}
+              onPress={() => setSelectedProjectDir(null)}
+              hitSlop={4}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  isDark && styles.chipTextDark,
+                  selectedProjectDir === null && styles.chipTextActive,
+                ]}
+              >
+                {t("sessionsList.projects.all", "Todos")} ({sessions.length})
+              </Text>
+            </TouchableOpacity>
+
+            {projectDirectories.map((dir) => {
+              const active = selectedProjectDir === dir
+              const name = nameOf(dir) || dir
+              const count = sessions.filter((s) => s.directory === dir).length
+              return (
+                <TouchableOpacity
+                  key={dir}
+                  style={[
+                    styles.chip,
+                    isDark && styles.chipDark,
+                    active && styles.chipActive,
+                  ]}
+                  onPress={() => setSelectedProjectDir(active ? null : dir)}
+                  hitSlop={4}
+                >
+                  <Ionicons
+                    name="folder-outline"
+                    size={12}
+                    color={active ? "#ffffff" : isDark ? "#888888" : "#666666"}
+                  />
+                  <Text
+                    style={[
+                      styles.chipText,
+                      isDark && styles.chipTextDark,
+                      active && styles.chipTextActive,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {name} ({count})
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
+          </ScrollView>
         </View>
       )}
 
@@ -735,9 +894,10 @@ export default function SessionsScreen() {
               session={row.session}
               isDark={isDark}
               isPinned={pinnedIds.has(row.session.id)}
-              onTogglePin={() => handleTogglePin(row.session.id)}
-              onRename={() => handleRename(row.session)}
-              onDelete={() => handleDelete(row.session)}
+              isSelectionMode={isSelectionMode}
+              isSelected={selectedIds.has(row.session.id)}
+              onToggleSelect={() => handleToggleSelect(row.session.id)}
+              onOpenMenu={() => setActionSession(row.session)}
             />
           )
         }
@@ -761,6 +921,29 @@ export default function SessionsScreen() {
         }
         contentContainerStyle={sessions.length === 0 ? styles.emptyContent : undefined}
       />
+
+      {/* Floating Batch Delete Action Bar */}
+      {isSelectionMode && selectedIds.size > 0 && (
+        <View style={[styles.floatingBatchBar, isDark && styles.floatingBatchBarDark]}>
+          <TouchableOpacity
+            style={styles.batchDeleteBtn}
+            onPress={() => setShowBatchDeleteConfirm(true)}
+            activeOpacity={0.8}
+            disabled={isDeletingBatch}
+          >
+            {isDeletingBatch ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <>
+                <Ionicons name="trash" size={17} color="#ffffff" />
+                <Text style={styles.batchDeleteBtnText}>
+                  {t("sessionsList.selection.deleteSelected", { count: selectedIds.size })}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* FAB to create new session */}
       <TouchableOpacity
@@ -1083,6 +1266,217 @@ export default function SessionsScreen() {
         </TouchableOpacity>
       </Modal>
 
+      {/* Styled Action Bottom Sheet for Session */}
+      <Modal visible={actionSession !== null && !showSingleDeleteConfirm} animationType="fade" transparent>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setActionSession(null)}
+        >
+          <View style={[styles.actionSheetCard, isDark && styles.actionSheetCardDark]}>
+            <View style={[styles.sheetHandle, isDark && styles.sheetHandleDark]} />
+
+            {/* Header with Title and Info */}
+            <View style={styles.actionSheetHeader}>
+              <Text style={[styles.actionSheetTitle, isDark && styles.textDark]} numberOfLines={2}>
+                {actionSession?.title || t("sessionsList.untitledSession")}
+              </Text>
+              <View style={styles.actionSheetMetaRow}>
+                {actionSession?.directory && (
+                  <View style={[styles.actionSheetBadge, isDark && styles.actionSheetBadgeDark]}>
+                    <Ionicons name="folder-outline" size={12} color={isDark ? "#aaaaaa" : "#666666"} />
+                    <Text style={[styles.actionSheetBadgeText, isDark && styles.metaDark]}>
+                      {nameOf(actionSession.directory) || actionSession.directory}
+                    </Text>
+                  </View>
+                )}
+                {actionSession?.time && (
+                  <Text style={[styles.actionSheetTime, isDark && styles.metaDark]}>
+                    {formatTime(actionSession.time.updated, t)}
+                  </Text>
+                )}
+              </View>
+            </View>
+
+            {/* Actions List */}
+            <View style={styles.actionSheetButtons}>
+              {/* Pin / Unpin */}
+              <TouchableOpacity
+                style={[styles.actionRow, isDark && styles.actionRowDark]}
+                onPress={() => {
+                  if (actionSession) {
+                    handleTogglePin(actionSession.id)
+                    setActionSession(null)
+                  }
+                }}
+              >
+                <View style={[styles.actionIconWrap, { backgroundColor: "rgba(139, 92, 246, 0.12)" }]}>
+                  <Ionicons
+                    name={actionSession && pinnedIds.has(actionSession.id) ? "pin" : "pin-outline"}
+                    size={18}
+                    color="#8b5cf6"
+                  />
+                </View>
+                <Text style={[styles.actionText, isDark && styles.textDark]}>
+                  {actionSession && pinnedIds.has(actionSession.id)
+                    ? t("sessionsList.actions.unpin")
+                    : t("sessionsList.actions.pin")}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Rename */}
+              <TouchableOpacity
+                style={[styles.actionRow, isDark && styles.actionRowDark]}
+                onPress={() => {
+                  if (actionSession) {
+                    const sess = actionSession
+                    setActionSession(null)
+                    handleRename(sess)
+                  }
+                }}
+              >
+                <View style={[styles.actionIconWrap, { backgroundColor: "rgba(59, 130, 246, 0.12)" }]}>
+                  <Ionicons name="pencil-outline" size={18} color="#3b82f6" />
+                </View>
+                <Text style={[styles.actionText, isDark && styles.textDark]}>
+                  {t("sessionsList.actions.rename")}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Delete */}
+              <TouchableOpacity
+                style={[styles.actionRow, isDark && styles.actionRowDark]}
+                onPress={() => {
+                  setShowSingleDeleteConfirm(true)
+                }}
+              >
+                <View style={[styles.actionIconWrap, { backgroundColor: "rgba(239, 68, 68, 0.12)" }]}>
+                  <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                </View>
+                <Text style={[styles.actionText, { color: "#ef4444", fontWeight: "600" }]}>
+                  {t("common.delete")}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Cancel Button */}
+            <TouchableOpacity
+              style={[styles.actionSheetCancelBtn, isDark && styles.actionSheetCancelBtnDark]}
+              onPress={() => setActionSession(null)}
+            >
+              <Text style={[styles.actionSheetCancelText, isDark && styles.textDark]}>
+                {t("common.cancel")}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Single Delete Confirmation Modal */}
+      <Modal visible={showSingleDeleteConfirm} animationType="fade" transparent>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowSingleDeleteConfirm(false)}
+        >
+          <View style={[styles.confirmCard, isDark && styles.confirmCardDark]}>
+            <View style={styles.confirmIconWrap}>
+              <Ionicons name="alert-circle" size={32} color="#ef4444" />
+            </View>
+            <Text style={[styles.confirmTitle, isDark && styles.textDark]}>
+              {t("sessionsList.actionSheet.deleteConfirmTitle", "Delete Session?")}
+            </Text>
+            <Text style={[styles.confirmMessage, isDark && styles.metaDark]}>
+              {t("sessionsList.actionSheet.deleteConfirmMessage", {
+                title: actionSession?.title || t("sessionsList.untitledSession"),
+              })}
+            </Text>
+            <View style={styles.confirmButtons}>
+              <TouchableOpacity
+                style={[styles.confirmCancelBtn, isDark && styles.confirmCancelBtnDark]}
+                onPress={() => setShowSingleDeleteConfirm(false)}
+              >
+                <Text style={[styles.confirmCancelText, isDark && styles.textDark]}>
+                  {t("common.cancel")}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmDeleteBtn}
+                onPress={async () => {
+                  if (actionSession) {
+                    const id = actionSession.id
+                    setShowSingleDeleteConfirm(false)
+                    setActionSession(null)
+                    try {
+                      await deleteSession(id)
+                    } catch {}
+                  }
+                }}
+              >
+                <Text style={styles.confirmDeleteBtnText}>{t("common.delete")}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Batch Delete Confirmation Modal */}
+      <Modal visible={showBatchDeleteConfirm} animationType="fade" transparent>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowBatchDeleteConfirm(false)}
+        >
+          <View style={[styles.confirmCard, isDark && styles.confirmCardDark]}>
+            <View style={styles.confirmIconWrap}>
+              <Ionicons name="trash" size={32} color="#ef4444" />
+            </View>
+            <Text style={[styles.confirmTitle, isDark && styles.textDark]}>
+              {t("sessionsList.selection.deleteConfirmTitle", { count: selectedIds.size })}
+            </Text>
+            <Text style={[styles.confirmMessage, isDark && styles.metaDark]}>
+              {t("sessionsList.selection.deleteConfirmMessage")}
+            </Text>
+            <View style={styles.confirmButtons}>
+              <TouchableOpacity
+                style={[styles.confirmCancelBtn, isDark && styles.confirmCancelBtnDark]}
+                onPress={() => setShowBatchDeleteConfirm(false)}
+                disabled={isDeletingBatch}
+              >
+                <Text style={[styles.confirmCancelText, isDark && styles.textDark]}>
+                  {t("common.cancel")}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmDeleteBtn}
+                disabled={isDeletingBatch}
+                onPress={async () => {
+                  setIsDeletingBatch(true)
+                  try {
+                    const ids = Array.from(selectedIds)
+                    for (const id of ids) {
+                      await deleteSession(id)
+                    }
+                    setSelectedIds(new Set())
+                    setIsSelectionMode(false)
+                    setShowBatchDeleteConfirm(false)
+                    loadSessions()
+                  } finally {
+                    setIsDeletingBatch(false)
+                  }
+                }}
+              >
+                {isDeletingBatch ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={styles.confirmDeleteBtnText}>{t("common.delete")}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Directory switcher bottom sheet */}
       <DirectorySwitcher
         sheetRef={dirSheetRef}
@@ -1212,13 +1606,319 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#0a0a0a",
   },
+  checkboxContainer: {
+    marginRight: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  menuTrigger: {
+    padding: 6,
+    marginLeft: 4,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  sessionItemSelected: {
+    backgroundColor: "#f5f3ff",
+    borderColor: "#8b5cf6",
+  },
+  sessionItemSelectedDark: {
+    backgroundColor: "rgba(139, 92, 246, 0.15)",
+    borderColor: "#8b5cf6",
+  },
   // Search & Sort bar
   searchSortContainer: {
-    flexDirection: "row",
-    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 8,
+  },
+  searchSortRow: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
+  },
+  iconButton: {
+    backgroundColor: "#f5f5f5",
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  iconButtonDark: {
+    backgroundColor: "#161616",
+  },
+  selectionModeBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    height: 38,
+    paddingHorizontal: 4,
+  },
+  selectionLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  selectionCountText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0a0a0a",
+  },
+  selectAllBtn: {
+    fontSize: 13,
+    color: "#8b5cf6",
+    fontWeight: "600",
+  },
+  cancelSelectionBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  cancelSelectionText: {
+    fontSize: 13,
+    color: "#666666",
+    fontWeight: "600",
+  },
+  // Chips
+  chipsContainer: {
+    paddingBottom: 8,
+  },
+  chipsScrollContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: "#f5f5f5",
+    borderWidth: 1,
+    borderColor: "#e5e5e5",
+  },
+  chipDark: {
+    backgroundColor: "#161616",
+    borderColor: "#2a2a2a",
+  },
+  chipActive: {
+    backgroundColor: "#8b5cf6",
+    borderColor: "#8b5cf6",
+  },
+  chipText: {
+    fontSize: 12,
+    color: "#666666",
+    fontWeight: "500",
+  },
+  chipTextDark: {
+    color: "#aaaaaa",
+  },
+  chipTextActive: {
+    color: "#ffffff",
+    fontWeight: "600",
+  },
+  // Floating batch delete bar
+  floatingBatchBar: {
+    position: "absolute",
+    bottom: 24,
+    left: 20,
+    right: 20,
+    zIndex: 100,
+  },
+  floatingBatchBarDark: {},
+  batchDeleteBtn: {
+    backgroundColor: "#ef4444",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 28,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  batchDeleteBtnText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  // Action sheet bottom modal
+  actionSheetCard: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#ffffff",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+    paddingTop: 12,
+    gap: 16,
+  },
+  actionSheetCardDark: {
+    backgroundColor: "#161616",
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+  },
+  sheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#dddddd",
+    alignSelf: "center",
+    marginBottom: 4,
+  },
+  sheetHandleDark: {
+    backgroundColor: "#333333",
+  },
+  actionSheetHeader: {
+    gap: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eeeeee",
+    paddingBottom: 12,
+  },
+  actionSheetTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0a0a0a",
+  },
+  actionSheetMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  actionSheetBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#f5f5f5",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  actionSheetBadgeDark: {
+    backgroundColor: "#222222",
+  },
+  actionSheetBadgeText: {
+    fontSize: 11,
+    color: "#666666",
+  },
+  actionSheetTime: {
+    fontSize: 11,
+    color: "#888888",
+  },
+  actionSheetButtons: {
+    gap: 6,
+  },
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    gap: 12,
+  },
+  actionRowDark: {},
+  actionIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  actionText: {
+    fontSize: 15,
+    color: "#0a0a0a",
+    fontWeight: "600",
+  },
+  actionSheetCancelBtn: {
+    backgroundColor: "#f5f5f5",
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+    marginTop: 4,
+  },
+  actionSheetCancelBtnDark: {
+    backgroundColor: "#222222",
+  },
+  actionSheetCancelText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#666666",
+  },
+  // Confirm cards
+  confirmCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    padding: 22,
+    width: "85%",
+    maxWidth: 340,
+    alignItems: "center",
+    gap: 10,
+  },
+  confirmCardDark: {
+    backgroundColor: "#161616",
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+  },
+  confirmIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  confirmTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#0a0a0a",
+    textAlign: "center",
+  },
+  confirmMessage: {
+    fontSize: 13,
+    color: "#666666",
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  confirmButtons: {
+    flexDirection: "row",
+    gap: 10,
+    width: "100%",
+    marginTop: 10,
+  },
+  confirmCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: "#f5f5f5",
+    alignItems: "center",
+  },
+  confirmCancelBtnDark: {
+    backgroundColor: "#222222",
+  },
+  confirmCancelText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#666666",
+  },
+  confirmDeleteBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: "#ef4444",
+    alignItems: "center",
+  },
+  confirmDeleteBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#ffffff",
   },
   searchRow: {
     flex: 1,

@@ -36,6 +36,14 @@ const STATUS_PRIORITY: Record<SessionVisualState, number> = {
   offline: 2,
 }
 
+export function extractProjectDirectories(sessions: Session[]): string[] {
+  const dirs = new Set<string>()
+  for (const s of sessions) {
+    if (s.directory) dirs.add(s.directory)
+  }
+  return Array.from(dirs).sort((a, b) => a.localeCompare(b))
+}
+
 export function filterAndSortSessions(
   sessions: Session[],
   options: {
@@ -46,6 +54,7 @@ export function filterAndSortSessions(
     sendingMap?: Record<string, boolean>
     activeSessionID?: string
     nowMs?: number
+    directoryFilter?: string | null
   } = {},
 ): Session[] {
   const {
@@ -56,13 +65,15 @@ export function filterAndSortSessions(
     sendingMap = {},
     activeSessionID,
     nowMs = Date.now(),
+    directoryFilter = null,
   } = options
 
   const pinnedSet = pinnedIds instanceof Set ? pinnedIds : new Set(pinnedIds || [])
   const trimmedQuery = query.trim().toLowerCase()
 
-  // 1. Filter
+  // 1. Filter by search query and optional directory
   const filtered = sessions.filter((s) => {
+    if (directoryFilter && s.directory !== directoryFilter) return false
     if (!trimmedQuery) return true
     const titleMatch = (s.title || "").toLowerCase().includes(trimmedQuery)
     const dirMatch = (s.directory || "").toLowerCase().includes(trimmedQuery)

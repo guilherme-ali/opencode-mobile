@@ -287,6 +287,25 @@
       "nameDesc": "名称（Z-A）",
       "status": "状态"
     },
+    "projects": {
+      "all": "全部"
+    },
+    "selection": {
+      "select": "选择",
+      "cancel": "取消",
+      "selectedCount": "已选择 {{count}} 项",
+      "selectAll": "全选",
+      "clearAll": "取消全选",
+      "deleteSelected": "删除所选项 ({{count}})",
+      "deleteConfirmTitle": "删除 {{count}} 个会话？",
+      "deleteConfirmMessage": "这些会话将从服务器永久删除。"
+    },
+    "actionSheet": {
+      "title": "会话选项",
+      "cancel": "取消",
+      "deleteConfirmTitle": "删除会话？",
+      "deleteConfirmMessage": "确定要删除“{{title}}”吗？"
+    },
     "time": {
       "justNow": "刚刚",
       "minutesAgo": "{{count}} 分钟前",

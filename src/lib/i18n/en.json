@@ -287,6 +287,25 @@
       "nameDesc": "Name (Z-A)",
       "status": "Status"
     },
+    "projects": {
+      "all": "All"
+    },
+    "selection": {
+      "select": "Select",
+      "cancel": "Cancel",
+      "selectedCount": "{{count}} selected",
+      "selectAll": "Select All",
+      "clearAll": "Deselect All",
+      "deleteSelected": "Delete Selected ({{count}})",
+      "deleteConfirmTitle": "Delete {{count}} Sessions?",
+      "deleteConfirmMessage": "These conversations will be permanently deleted from the server."
+    },
+    "actionSheet": {
+      "title": "Session Options",
+      "cancel": "Cancel",
+      "deleteConfirmTitle": "Delete Session?",
+      "deleteConfirmMessage": "Are you sure you want to delete \"{{title}}\"?"
+    },
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",

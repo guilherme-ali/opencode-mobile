@@ -1,7 +1,11 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import type { Session } from "./sdk.ts"
-import { getSessionVisualState, filterAndSortSessions } from "./session-sort.ts"
+import {
+  getSessionVisualState,
+  filterAndSortSessions,
+  extractProjectDirectories,
+} from "./session-sort.ts"
 
 const makeSession = (id: string, title: string, updated: number, directory?: string): Session => ({
   id,
@@ -86,4 +90,19 @@ test("filterAndSortSessions: sorts by date, name, and status with pinned session
     nowMs: now,
   })
   assert.deepEqual(byStatus.map((s) => s.id), ["b", "o", "off"])
+})
+
+test("extractProjectDirectories & directoryFilter: extracts dirs and filters by selected dir", () => {
+  const list = [
+    makeSession("1", "A", 1000, "/projects/projA"),
+    makeSession("2", "B", 2000, "/projects/projB"),
+    makeSession("3", "C", 3000, "/projects/projA"),
+  ]
+
+  const dirs = extractProjectDirectories(list)
+  assert.deepEqual(dirs, ["/projects/projA", "/projects/projB"])
+
+  const filtered = filterAndSortSessions(list, { directoryFilter: "/projects/projA" })
+  assert.equal(filtered.length, 2)
+  assert.deepEqual(filtered.map((s) => s.id), ["3", "1"])
 })
