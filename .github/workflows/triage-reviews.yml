@@ -16,6 +16,8 @@ concurrency:
 
 jobs:
   triage:
+    # Needs the upstream Play Console service account; skip on forks.
+    if: github.repository == 'dzianisv/opencode-mobile'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

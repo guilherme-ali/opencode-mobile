@@ -46,6 +46,8 @@ concurrency:
 
 jobs:
   report:
+    # Needs the upstream Sentry secrets; skip on forks.
+    if: github.repository == 'dzianisv/opencode-mobile'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
